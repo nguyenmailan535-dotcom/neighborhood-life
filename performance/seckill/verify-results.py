@@ -37,7 +37,11 @@ def main() -> None:
     for line in (RESULTS / "seckill-queues.txt").read_text().splitlines():
         fields = line.split()
         if len(fields) >= 2:
-            queues[fields[0]] = int(fields[1])
+            try:
+                queues[fields[0]] = int(fields[1])
+            except ValueError:
+                # rabbitmqctl may emit the "name messages" header even with -q.
+                continue
 
     require(database["accepted"] == db_orders, "database accepted count != persisted orders")
     require(db_orders == db_users, "database baseline produced duplicate user orders")
