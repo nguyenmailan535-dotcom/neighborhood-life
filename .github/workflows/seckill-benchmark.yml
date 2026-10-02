@@ -1,0 +1,129 @@
+name: Seckill Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: Sampling duration in seconds
+        required: true
+        default: "60"
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "8"
+          cache: maven
+
+      - name: Install benchmark clients
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-tools default-mysql-client
+          curl -fsSLO https://dlcdn.apache.org/jmeter/binaries/apache-jmeter-5.6.3.tgz
+          curl -fsSLO https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.6.3.tgz.sha512
+          echo "$(cut -d' ' -f1 apache-jmeter-5.6.3.tgz.sha512)  apache-jmeter-5.6.3.tgz" | sha512sum -c -
+          tar -xzf apache-jmeter-5.6.3.tgz
+
+      - name: Start infrastructure
+        run: docker compose -f compose.local.yml up -d mysql redis rabbitmq
+
+      - name: Start database baseline
+        env:
+          SECKILL_MODE: database
+        run: |
+          docker compose -f compose.local.yml up -d --build app
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8081/shop/1 >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker compose -f compose.local.yml logs app
+          exit 1
+
+      - name: Prepare database baseline data
+        run: |
+          docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev hmdp < performance/seckill/reset-voucher.sql
+          pwsh -File performance/seckill/prepare-seckill-users.ps1 -RedisCli redis-cli -UserCount 100000 -VoucherId 9001 -Stock 100000
+
+      - name: Run database baseline
+        run: |
+          ./apache-jmeter-5.6.3/bin/jmeter -n \
+            -t performance/jmeter/seckill-voucher-comparison.jmx \
+            -Jthreads=200 -Jramp=10 -Jduration=${{ inputs.duration }} -JvoucherId=9001 \
+            -Jcredentials=performance/results/seckill-users.csv \
+            -l performance/results/seckill-database.jtl
+          python3 performance/seckill/analyze-jtl.py \
+            performance/results/seckill-database.jtl --mode database \
+            --output performance/results/seckill-database.json
+          docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev \
+            --batch --skip-column-names hmdp -e \
+            "SELECT COUNT(*), COUNT(DISTINCT user_id), MIN(id), MAX(id) FROM tb_voucher_order WHERE voucher_id=9001; SELECT stock FROM tb_seckill_voucher WHERE voucher_id=9001;" \
+            > performance/results/seckill-database-db.txt
+
+      - name: Reset and start Redis MQ optimization
+        env:
+          SECKILL_MODE: redis-mq
+        run: |
+          docker compose -f compose.local.yml stop app
+          docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev hmdp < performance/seckill/reset-voucher.sql
+          docker compose -f compose.local.yml exec -T rabbitmq rabbitmqctl purge_queue seckill.order.queue || true
+          docker compose -f compose.local.yml exec -T rabbitmq rabbitmqctl purge_queue seckill.order.dlq || true
+          pwsh -File performance/seckill/prepare-seckill-users.ps1 -RedisCli redis-cli -UserCount 100000 -VoucherId 9001 -Stock 100000
+          docker compose -f compose.local.yml up -d --force-recreate app
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8081/shop/1 >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker compose -f compose.local.yml logs app
+          exit 1
+
+      - name: Run Redis MQ optimization
+        run: |
+          ./apache-jmeter-5.6.3/bin/jmeter -n \
+            -t performance/jmeter/seckill-voucher-comparison.jmx \
+            -Jthreads=200 -Jramp=10 -Jduration=${{ inputs.duration }} -JvoucherId=9001 \
+            -Jcredentials=performance/results/seckill-users.csv \
+            -l performance/results/seckill-redis-mq.jtl
+          python3 performance/seckill/analyze-jtl.py \
+            performance/results/seckill-redis-mq.jtl --mode redis-mq \
+            --output performance/results/seckill-redis-mq.json
+
+      - name: Wait for durable persistence and verify invariants
+        run: |
+          for attempt in $(seq 1 180); do
+            queued=$(docker compose -f compose.local.yml exec -T rabbitmq rabbitmqctl list_queues -q name messages | awk '$1=="seckill.order.queue" {print $2}')
+            queued=${queued:-0}
+            if [ "$queued" = "0" ]; then break; fi
+            sleep 2
+          done
+          sleep 5
+          docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev \
+            --batch --skip-column-names hmdp -e \
+            "SELECT COUNT(*), COUNT(DISTINCT user_id), MIN(id), MAX(id) FROM tb_voucher_order WHERE voucher_id=9001; SELECT stock FROM tb_seckill_voucher WHERE voucher_id=9001; SELECT COUNT(*) FROM (SELECT user_id, voucher_id, COUNT(*) c FROM tb_voucher_order WHERE voucher_id=9001 GROUP BY user_id, voucher_id HAVING c > 1) duplicates;" \
+            > performance/results/seckill-redis-mq-db.txt
+          redis-cli -n 6 GET seckill:stock:9001 > performance/results/seckill-redis-stock.txt
+          redis-cli -n 6 HLEN seckill:pending:orders > performance/results/seckill-outbox.txt
+          docker compose -f compose.local.yml exec -T rabbitmq rabbitmqctl list_queues -q name messages \
+            > performance/results/seckill-queues.txt
+
+      - name: Enforce inventory and idempotency invariants
+        run: python3 performance/seckill/verify-results.py
+
+      - name: Upload raw benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seckill-benchmark-${{ github.run_id }}
+          path: |
+            performance/results/seckill-*.jtl
+            performance/results/seckill-*.json
+            performance/results/seckill-*.txt
+          retention-days: 14
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose -f compose.local.yml logs --no-color
