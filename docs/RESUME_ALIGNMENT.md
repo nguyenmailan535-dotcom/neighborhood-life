@@ -11,13 +11,12 @@
 | Caffeine + Redis + MySQL 多级缓存 | `cache/MultiLevelShopCache`、`LocalCacheConfig` | `MultiLevelShopCacheTest` |
 | 空值、逻辑过期、随机 TTL、Redisson 重建锁 | `MultiLevelShopCache` | 命中、回源、锁释放测试；热点接口 JMeter 对照 |
 | Redis + Lua + AOP 滑动窗口限流 | `ratelimit/*`、`sliding-window-rate-limit.lua` | `SlidingWindowRateLimitAspectTest` 覆盖 API、用户、IP 三维策略 |
-| 可复现性能数据 | `performance/jmeter/shop-cache-comparison.jmx` | `performance/results/2026-10-02-local.md` 保存参数、逐轮统计和口径 |
+| 可复现秒杀性能数据 | `performance/jmeter/seckill-voucher-comparison.jmx` | `performance/seckill/README.md` 规定唯一用户、库存一致性、落库完成率与三轮对照口径 |
 
-## 当前可使用的性能表述
+## 性能表述状态
 
-在 i5-11300H、Java 8、本机回环环境下，以 200 并发、10 秒升压、持续 60 秒并各运行 3 轮，
-多级缓存相较 Redis 基线的平均 QPS 从 5,990 提升至 12,656（+111.3%），平均 P95 从
-46.0 ms 降至 34.3 ms（-25.4%），六轮错误率均为 0%。
+既有 `5,990 -> 12,656 QPS、46.0 ms -> 34.3 ms P95` 测量的是热点商铺读取，只能用于多级
+缓存专项说明，不能写成优惠券秒杀性能。秒杀项目描述必须等待数据库同步基线与 Redis Lua +
+RabbitMQ 优化组各完成至少三轮有效测试，并同时通过库存、幂等、落库与队列排空校验。
 
-不建议继续使用 `545 -> 984 QPS、310 ms -> 167 ms P95`，因为当前仓库没有对应环境的原始
-JTL；代码能力已经覆盖该描述，但简历中的数值应替换成可复现结果。
+在正式秒杀结果产生前，不应使用 `545 -> 984` 或任何其他秒杀 QPS/P95 数字。

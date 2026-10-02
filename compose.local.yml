@@ -49,6 +49,7 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USERNAME: hmdp
       RABBITMQ_PASSWORD: hmdp_dev
+      SECKILL_MODE: ${SECKILL_MODE:-redis-mq}
       LOCAL_CACHE_ENABLED: "true"
     ports:
       - "8081:8081"

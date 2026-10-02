@@ -11,6 +11,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,12 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Resource
     private ISeckillVoucherService seckillVoucherService;
 
+    @Resource
+    private SynchronousVoucherOrderService synchronousVoucherOrderService;
+
+    @Value("${app.seckill.mode:redis-mq}")
+    private String seckillMode;
+
     //lua脚本
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
 
@@ -54,6 +61,10 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         Long userId = UserHolder.getUser().getId();
 
         long orderId = redisIdWorker.nextId("order");
+        if ("database".equalsIgnoreCase(seckillMode)) {
+            return synchronousVoucherOrderService.createOrder(orderId, userId, voucherId);
+        }
+
         VoucherOrder voucherOrder = new VoucherOrder();
         voucherOrder.setId(orderId);
         voucherOrder.setUserId(userId);

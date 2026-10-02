@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,6 +36,8 @@ class VoucherOrderServiceImplTest {
     private MQSender sender;
     @Mock
     private StringRedisTemplate redisTemplate;
+    @Mock
+    private SynchronousVoucherOrderService synchronousVoucherOrderService;
 
     private VoucherOrderServiceImpl service;
 
@@ -44,6 +47,8 @@ class VoucherOrderServiceImplTest {
         ReflectionTestUtils.setField(service, "redisIdWorker", idWorker);
         ReflectionTestUtils.setField(service, "mqSender", sender);
         ReflectionTestUtils.setField(service, "stringRedisTemplate", redisTemplate);
+        ReflectionTestUtils.setField(service, "synchronousVoucherOrderService", synchronousVoucherOrderService);
+        ReflectionTestUtils.setField(service, "seckillMode", "redis-mq");
         UserDTO user = new UserDTO();
         user.setId(42L);
         UserHolder.saveUser(user);
@@ -68,5 +73,20 @@ class VoucherOrderServiceImplTest {
         verify(sender).sendSeckillMessage(message.capture());
         assertTrue(message.getValue().contains("\"userId\":42"));
         assertTrue(message.getValue().contains("\"voucherId\":7"));
+    }
+
+    @Test
+    void databaseModeRoutesToSynchronousTransactionalBaseline() {
+        ReflectionTestUtils.setField(service, "seckillMode", "database");
+        when(idWorker.nextId("order")).thenReturn(9002L);
+        when(synchronousVoucherOrderService.createOrder(9002L, 42L, 7L))
+                .thenReturn(Result.ok(9002L));
+
+        Result result = service.seckillVoucher(7L);
+
+        assertTrue(result.getSuccess());
+        assertEquals(9002L, result.getData());
+        verify(synchronousVoucherOrderService).createOrder(9002L, 42L, 7L);
+        verifyNoInteractions(redisTemplate, sender);
     }
 }

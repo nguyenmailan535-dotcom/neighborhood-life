@@ -55,16 +55,13 @@ docker compose -f compose.local.yml up --build
 MySQL 初始化脚本会创建订单业务唯一索引；已有数据库可单独执行
 `src/main/resources/db/migration/V2__voucher_order_idempotency.sql`。
 
-## 性能对照
+## 性能与正确性验证
 
-`performance/jmeter/shop-cache-comparison.jmx` 固定请求热点商铺接口，通过
-`LOCAL_CACHE_ENABLED=false/true` 对比 Redis-only 与 Caffeine + Redis + MySQL。详细运行约束见
-[`performance/README.md`](performance/README.md)。
+简历主指标使用 `performance/jmeter/seckill-voucher-comparison.jmx` 压测优惠券秒杀接口，支持
+通过 `SECKILL_MODE=database/redis-mq` 对比 MySQL 同步下单与 Redis Lua + RabbitMQ 异步下单。
+测试为每次请求分配不同的用户 token 和 IP，并在采样结束后核验落库完成率、库存一致性、重复
+订单、Outbox 与 DLQ。完整协议见
+[`performance/seckill/README.md`](performance/seckill/README.md)。
 
-在 i5-11300H、16 GB 内存、Java 8 的本机回环环境中，以 200 并发、10 秒升压、持续 60 秒、
-每种模式运行 3 次：平均 QPS 从 **5,990** 提升至 **12,656（+111.3%）**，平均 P95 从
-**46 ms** 降至 **34.3 ms（-25.4%）**，六轮错误率均为 **0%**。测试环境、逐轮结果和统计口径见
-[`performance/results/2026-10-02-local.md`](performance/results/2026-10-02-local.md)。
-
-性能数据高度依赖机器与网络环境；因此仓库使用真实复测值，不沿用简历中尚未在当前环境复现的
-`545 -> 984 QPS、310 ms -> 167 ms P95`。
+`shop-cache-comparison.jmx` 与既有结果仅用于多级缓存专项验证，不能作为秒杀链路指标。秒杀正式
+对照尚未在当前机器完成，因此 README 不声明秒杀 QPS/P95；取得三轮有效结果后再更新简历。

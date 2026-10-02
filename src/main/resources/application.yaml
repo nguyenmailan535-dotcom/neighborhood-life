@@ -40,6 +40,7 @@ app:
   cache:
     local-enabled: ${LOCAL_CACHE_ENABLED:true}
   seckill:
+    mode: ${SECKILL_MODE:redis-mq}
     outbox-retry-ms: ${SECKILL_OUTBOX_RETRY_MS:5000}
 
 logging:
