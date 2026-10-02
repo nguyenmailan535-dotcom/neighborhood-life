@@ -30,7 +30,17 @@ jobs:
           tar -xzf apache-jmeter-5.6.3.tgz
 
       - name: Start infrastructure
-        run: docker compose -f compose.local.yml up -d mysql redis rabbitmq
+        run: |
+          docker compose -f compose.local.yml up -d mysql redis rabbitmq
+          for attempt in $(seq 1 60); do
+            table_count=$(docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev \
+              --batch --skip-column-names hmdp -e \
+              "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='hmdp' AND table_name IN ('tb_shop','tb_seckill_voucher','tb_voucher_order');" 2>/dev/null || true)
+            if [ "$table_count" = "3" ]; then exit 0; fi
+            sleep 2
+          done
+          docker compose -f compose.local.yml logs mysql
+          exit 1
 
       - name: Start database baseline
         env:
