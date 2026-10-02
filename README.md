@@ -61,7 +61,10 @@ MySQL 初始化脚本会创建订单业务唯一索引；已有数据库可单�
 通过 `SECKILL_MODE=database/redis-mq` 对比 MySQL 同步下单与 Redis Lua + RabbitMQ 异步下单。
 测试为每次请求分配不同的用户 token 和 IP，并在采样结束后核验落库完成率、库存一致性、重复
 订单、Outbox 与 DLQ。完整协议见
-[`performance/seckill/README.md`](performance/seckill/README.md)。
+[`performance/seckill/README.md`](performance/seckill/README.md)，三轮原始口径与结果见
+[`performance/seckill/RESULTS.md`](performance/seckill/RESULTS.md)。
 
 `shop-cache-comparison.jmx` 与既有结果仅用于多级缓存专项验证，不能作为秒杀链路指标。秒杀正式
-对照尚未在当前机器完成，因此 README 不声明秒杀 QPS/P95；取得三轮有效结果后再更新简历。
+对照中，同步 MySQL 与 Redis Lua + RabbitMQ 链路的三轮平均受理 QPS 为
+`643.63 -> 1,238.20`（`+92.4%`），平均 P95 为 `757.67 ms -> 325.00 ms`（`-57.1%`）；
+三轮端到端落库完成率均为 100%，无超卖、重复订单及消息遗留。
