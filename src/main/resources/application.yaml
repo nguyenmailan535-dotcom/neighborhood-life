@@ -1,5 +1,11 @@
 server:
   port: ${SERVER_PORT:8081}
+  tomcat:
+    threads:
+      max: ${TOMCAT_MAX_THREADS:400}
+      min-spare: ${TOMCAT_MIN_SPARE_THREADS:20}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:1000}
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:8192}
 
 spring:
   application:
@@ -35,6 +41,10 @@ mybatis-plus:
   type-aliases-package: com.hmdp.entity
 
 app:
+  rate-limit:
+    # Production defaults to 1. Benchmarks may raise all dimensions equally so the
+    # limiter stays active without masking the downstream ordering implementation.
+    multiplier: ${RATE_LIMIT_MULTIPLIER:1}
   rabbit:
     listener-enabled: ${RABBIT_LISTENER_ENABLED:true}
   cache:

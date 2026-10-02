@@ -50,6 +50,9 @@ services:
       RABBITMQ_USERNAME: hmdp
       RABBITMQ_PASSWORD: hmdp_dev
       SECKILL_MODE: ${SECKILL_MODE:-redis-mq}
+      RABBIT_LISTENER_ENABLED: ${RABBIT_LISTENER_ENABLED:-true}
+      RATE_LIMIT_MULTIPLIER: ${RATE_LIMIT_MULTIPLIER:-1}
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx768m -XX:+ExitOnOutOfMemoryError"
       LOCAL_CACHE_ENABLED: "true"
     ports:
       - "8081:8081"

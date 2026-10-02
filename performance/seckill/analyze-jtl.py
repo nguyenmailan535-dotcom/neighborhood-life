@@ -28,6 +28,9 @@ def main() -> None:
     starts: list[int] = []
     ends: list[int] = []
     attempts = 0
+    business_rejections = 0
+    http_errors = 0
+    transport_errors = 0
     with args.jtl.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             attempts += 1
@@ -37,6 +40,12 @@ def main() -> None:
             ends.append(started + elapsed)
             if row["success"].lower() == "true":
                 successful_elapsed.append(elapsed)
+            elif row["responseCode"].startswith("Non HTTP response code"):
+                transport_errors += 1
+            elif row["responseCode"] == "200":
+                business_rejections += 1
+            else:
+                http_errors += 1
 
     duration = (max(ends) - min(starts)) / 1000 if starts else 0.0
     accepted = len(successful_elapsed)
@@ -45,6 +54,9 @@ def main() -> None:
         "attempts": attempts,
         "accepted": accepted,
         "rejected_or_failed": attempts - accepted,
+        "business_rejections": business_rejections,
+        "http_errors": http_errors,
+        "transport_errors": transport_errors,
         "success_rate": accepted / attempts if attempts else 0.0,
         "duration_seconds": duration,
         "attempt_qps": attempts / duration if duration else 0.0,

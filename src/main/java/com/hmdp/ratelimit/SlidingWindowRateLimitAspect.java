@@ -8,6 +8,7 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
@@ -32,6 +33,9 @@ public class SlidingWindowRateLimitAspect {
 
     private final StringRedisTemplate redisTemplate;
 
+    @Value("${app.rate-limit.multiplier:1}")
+    private int limitMultiplier = 1;
+
     public SlidingWindowRateLimitAspect(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
@@ -45,6 +49,7 @@ public class SlidingWindowRateLimitAspect {
         long now = System.currentTimeMillis();
 
         for (SlidingWindowRateLimit policy : policies) {
+            int effectiveLimit = policy.limit() * Math.max(1, limitMultiplier);
             String subject = subject(policy.dimension(), request);
             if (subject == null) {
                 continue;
@@ -56,7 +61,7 @@ public class SlidingWindowRateLimitAspect {
                     Collections.singletonList(key),
                     Long.toString(now),
                     Long.toString(policy.windowSeconds() * 1000L),
-                    Integer.toString(policy.limit()),
+                    Integer.toString(effectiveLimit),
                     now + "-" + UUID.randomUUID());
             if (remaining == null || remaining < 0L) {
                 return Result.fail("请求过于频繁，请稍后重试");

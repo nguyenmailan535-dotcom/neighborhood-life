@@ -12,6 +12,8 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      HEAP: -Xms256m -Xmx768m
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -45,6 +47,7 @@ jobs:
       - name: Start database baseline
         env:
           SECKILL_MODE: database
+          RATE_LIMIT_MULTIPLIER: "10"
         run: |
           docker compose -f compose.local.yml up -d --build app
           for attempt in $(seq 1 90); do
@@ -77,6 +80,8 @@ jobs:
       - name: Reset and start Redis MQ optimization
         env:
           SECKILL_MODE: redis-mq
+          RABBIT_LISTENER_ENABLED: "false"
+          RATE_LIMIT_MULTIPLIER: "10"
         run: |
           docker compose -f compose.local.yml stop app
           docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev hmdp < performance/seckill/reset-voucher.sql
@@ -102,8 +107,18 @@ jobs:
             performance/results/seckill-redis-mq.jtl --mode redis-mq \
             --output performance/results/seckill-redis-mq.json
 
-      - name: Wait for durable persistence and verify invariants
+      - name: Start consumer, wait for durable persistence and verify invariants
+        env:
+          SECKILL_MODE: redis-mq
+          RABBIT_LISTENER_ENABLED: "true"
+          RATE_LIMIT_MULTIPLIER: "10"
         run: |
+          docker compose -f compose.local.yml stop app
+          docker compose -f compose.local.yml up -d --force-recreate app
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8081/shop/1 >/dev/null; then break; fi
+            sleep 2
+          done
           for attempt in $(seq 1 180); do
             queued=$(docker compose -f compose.local.yml exec -T rabbitmq rabbitmqctl list_queues -q name messages | awk '$1=="seckill.order.queue" {print $2}')
             queued=${queued:-0}

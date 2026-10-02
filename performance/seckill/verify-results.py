@@ -44,10 +44,16 @@ def main() -> None:
                 continue
 
     require(database["accepted"] == db_orders, "database accepted count != persisted orders")
+    require(database["transport_errors"] == 0, "database path has transport errors")
+    require(database["http_errors"] == 0, "database path has HTTP server errors")
+    require(database["business_rejections"] == 0, "database path hit a business limiter/rejection")
     require(db_orders == db_users, "database baseline produced duplicate user orders")
     require(db_stock == INITIAL_STOCK - db_orders, "database baseline stock mismatch")
 
     require(optimized["accepted"] == mq_orders, "Redis/MQ accepted count != persisted orders")
+    require(optimized["transport_errors"] == 0, "Redis/MQ path has transport errors")
+    require(optimized["http_errors"] == 0, "Redis/MQ path has HTTP server errors")
+    require(optimized["business_rejections"] == 0, "Redis/MQ path hit a business limiter/rejection")
     require(mq_orders == mq_users, "Redis/MQ path produced duplicate user orders")
     require(mq_duplicates == 0, "Redis/MQ path has duplicate business keys")
     require(mq_stock == INITIAL_STOCK - mq_orders, "Redis/MQ database stock mismatch")
