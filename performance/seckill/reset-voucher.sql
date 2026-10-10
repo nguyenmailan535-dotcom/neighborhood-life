@@ -1,5 +1,5 @@
 SET @voucher_id = 9001;
-SET @stock = 100000;
+SET @stock = 250000;
 
 DELETE FROM tb_voucher_order WHERE voucher_id = @voucher_id;
 INSERT INTO tb_seckill_voucher (voucher_id, stock, begin_time, end_time)

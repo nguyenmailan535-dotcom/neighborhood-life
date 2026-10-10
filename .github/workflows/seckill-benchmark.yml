@@ -60,7 +60,7 @@ jobs:
       - name: Prepare Redis synchronous baseline data
         run: |
           docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev hmdp < performance/seckill/reset-voucher.sql
-          pwsh -File performance/seckill/prepare-seckill-users.ps1 -RedisCli redis-cli -UserCount 100000 -VoucherId 9001 -Stock 100000
+          pwsh -File performance/seckill/prepare-seckill-users.ps1 -RedisCli redis-cli -UserCount 250000 -VoucherId 9001 -Stock 250000
 
       - name: Run Redis synchronous baseline
         run: |
@@ -88,7 +88,7 @@ jobs:
           docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev hmdp < performance/seckill/reset-voucher.sql
           docker compose -f compose.local.yml exec -T rabbitmq rabbitmqctl purge_queue seckill.order.queue || true
           docker compose -f compose.local.yml exec -T rabbitmq rabbitmqctl purge_queue seckill.order.dlq || true
-          pwsh -File performance/seckill/prepare-seckill-users.ps1 -RedisCli redis-cli -UserCount 100000 -VoucherId 9001 -Stock 100000
+          pwsh -File performance/seckill/prepare-seckill-users.ps1 -RedisCli redis-cli -UserCount 250000 -VoucherId 9001 -Stock 250000
           docker compose -f compose.local.yml up -d --force-recreate app
           for attempt in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:8081/shop/1 >/dev/null; then exit 0; fi

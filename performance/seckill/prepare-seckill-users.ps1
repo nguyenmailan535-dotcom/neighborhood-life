@@ -1,7 +1,7 @@
 param(
-    [int]$UserCount = 100000,
+    [int]$UserCount = 250000,
     [long]$VoucherId = 9001,
-    [int]$Stock = 100000,
+    [int]$Stock = 250000,
     [int]$RedisDatabase = 6,
     [string]$RedisCli = "redis-cli",
     [string]$OutputFile = "performance/results/seckill-users.csv"

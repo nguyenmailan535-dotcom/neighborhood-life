@@ -18,12 +18,12 @@ GitHub Actions 对两组统一设置 `RATE_LIMIT_MULTIPLIER=10`，使限流链�
 
 ## 1. 准备相同初始数据
 
-每轮前执行 `reset-voucher.sql`，清空测试券订单并将数据库库存重置为 100,000；随后运行：
+每轮前执行 `reset-voucher.sql`，清空测试券订单并将数据库库存重置为 250,000；该容量要高于 60 秒内可能产生的请求数，避免 CSV 凭证耗尽导致线程提前结束。随后运行：
 
 ```powershell
 & .\performance\seckill\prepare-seckill-users.ps1 `
   -RedisCli .\path\to\redis-cli.exe `
-  -UserCount 100000 -VoucherId 9001 -Stock 100000
+  -UserCount 250000 -VoucherId 9001 -Stock 250000
 ```
 
 脚本会生成被 Git 忽略的 `performance/results/seckill-users.csv`，并初始化认证 token、Redis

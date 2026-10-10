@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 RESULTS = Path("performance/results")
-INITIAL_STOCK = 100_000
+INITIAL_STOCK = 250_000
 
 
 def read_db(name: str) -> tuple[int, int, int, int | None]:
