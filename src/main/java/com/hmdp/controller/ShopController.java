@@ -3,6 +3,7 @@ package com.hmdp.controller;
 
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.hmdp.cache.MultiLevelShopCache;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.Shop;
 import com.hmdp.service.IShopService;
@@ -10,6 +11,7 @@ import com.hmdp.utils.SystemConstants;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.util.Map;
 
 /**
  * <p>
@@ -25,6 +27,15 @@ public class ShopController {
 
     @Resource
     public IShopService shopService;
+    @Resource
+    private MultiLevelShopCache multiLevelShopCache;
+
+    /** Cumulative per-JVM Caffeine counters for the controlled performance experiment. */
+    @GetMapping("/_cache/stats")
+    public Result queryShopCacheStats() {
+        Map<String, Object> stats = multiLevelShopCache.localStats();
+        return Result.ok(stats);
+    }
 
     /**
      * 根据id查询商铺信息

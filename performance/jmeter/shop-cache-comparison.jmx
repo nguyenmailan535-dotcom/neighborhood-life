@@ -2,7 +2,7 @@
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
     <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Neighborhood Life Cache Comparison" enabled="true">
-      <stringProp name="TestPlan.comments">Compare Redis-only and Caffeine+Redis+MySQL using the same hot-shop request.</stringProp>
+      <stringProp name="TestPlan.comments">Compare Redis+MySQL and Caffeine+Redis+MySQL with a deterministic 70/20/10 hot, warm and long-tail shop distribution.</stringProp>
       <boolProp name="TestPlan.functional_mode">false</boolProp>
       <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
       <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" enabled="true">
@@ -11,7 +11,7 @@
       <stringProp name="TestPlan.user_define_classpath"/>
     </TestPlan>
     <hashTree>
-      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Hot Shop Readers" enabled="true">
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Skewed Shop Readers 70-20-10" enabled="true">
         <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
         <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" enabled="true">
           <boolProp name="LoopController.continue_forever">true</boolProp>
@@ -25,14 +25,52 @@
         <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
       </ThreadGroup>
       <hashTree>
-        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET hot shop" enabled="true">
+        <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Choose shop from 70-20-10 distribution" enabled="true">
+          <stringProp name="cacheKey">true</stringProp>
+          <stringProp name="filename"></stringProp>
+          <stringProp name="parameters"></stringProp>
+          <stringProp name="script">def rng = vars.getObject('shopDistributionRng')
+if (rng == null) {
+    long baseSeed = (props.get('seed') ?: '20261010') as long
+    rng = new java.util.SplittableRandom(baseSeed + ctx.getThreadNum())
+    vars.putObject('shopDistributionRng', rng)
+}
+
+long sequence = (vars.get('shopDistributionSequence') ?: '0') as long
+int percentile = (sequence % 100) as int
+vars.put('shopDistributionSequence', Long.toString(sequence + 1))
+long start
+long count
+String tier
+if (percentile &lt; 70) {
+    start = (props.get('hotStart') ?: '1') as long
+    count = (props.get('hotCount') ?: '100') as long
+    tier = 'hot'
+} else if (percentile &lt; 90) {
+    start = (props.get('warmStart') ?: '101') as long
+    count = (props.get('warmCount') ?: '1900') as long
+    tier = 'warm'
+} else {
+    start = (props.get('tailStart') ?: '2001') as long
+    count = (props.get('tailCount') ?: '18000') as long
+    tier = 'tail'
+}
+if (count &lt;= 0) {
+    throw new IllegalArgumentException(tier + ' shop count must be positive')
+}
+vars.put('shopId', Long.toString(start + rng.nextLong(count)))
+vars.put('trafficTier', tier)</stringProp>
+          <stringProp name="scriptLanguage">groovy</stringProp>
+        </JSR223PreProcessor>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET distributed shop" enabled="true">
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" enabled="true">
             <collectionProp name="Arguments.arguments"/>
           </elementProp>
           <stringProp name="HTTPSampler.domain">${__P(host,127.0.0.1)}</stringProp>
           <stringProp name="HTTPSampler.port">${__P(port,8081)}</stringProp>
           <stringProp name="HTTPSampler.protocol">http</stringProp>
-          <stringProp name="HTTPSampler.path">/shop/${__P(shopId,1)}</stringProp>
+          <stringProp name="HTTPSampler.path">/shop/${shopId}</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
           <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>

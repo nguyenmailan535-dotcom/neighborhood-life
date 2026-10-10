@@ -11,8 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.annotation.Resource;
 
 /**
- * Database-only seckill baseline used for reproducible comparison with the Redis/MQ path.
- * Both paths retain the same conditional stock update and unique business constraint.
+ * Synchronous MySQL persistence used after the shared Redis/Lua reservation step.
+ * The benchmark changes only the post-reservation path: request-thread transaction or MQ.
  */
 @Service
 public class SynchronousVoucherOrderService {

@@ -44,9 +44,9 @@ jobs:
           docker compose -f compose.local.yml logs mysql
           exit 1
 
-      - name: Start database baseline
+      - name: Start Redis Lua plus synchronous MySQL baseline
         env:
-          SECKILL_MODE: database
+          SECKILL_MODE: redis-sync
           RATE_LIMIT_MULTIPLIER: "10"
         run: |
           docker compose -f compose.local.yml up -d --build app
@@ -57,25 +57,26 @@ jobs:
           docker compose -f compose.local.yml logs app
           exit 1
 
-      - name: Prepare database baseline data
+      - name: Prepare Redis synchronous baseline data
         run: |
           docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev hmdp < performance/seckill/reset-voucher.sql
           pwsh -File performance/seckill/prepare-seckill-users.ps1 -RedisCli redis-cli -UserCount 100000 -VoucherId 9001 -Stock 100000
 
-      - name: Run database baseline
+      - name: Run Redis synchronous baseline
         run: |
           ./apache-jmeter-5.6.3/bin/jmeter -n \
             -t performance/jmeter/seckill-voucher-comparison.jmx \
             -Jthreads=200 -Jramp=10 -Jduration=${{ inputs.duration }} -JvoucherId=9001 \
             -Jcredentials=performance/results/seckill-users.csv \
-            -l performance/results/seckill-database.jtl
+            -l performance/results/seckill-redis-sync.jtl
           python3 performance/seckill/analyze-jtl.py \
-            performance/results/seckill-database.jtl --mode database \
-            --output performance/results/seckill-database.json
+            performance/results/seckill-redis-sync.jtl --mode redis-sync \
+            --output performance/results/seckill-redis-sync.json
           docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev \
             --batch --skip-column-names hmdp -e \
-            "SELECT COUNT(*), COUNT(DISTINCT user_id), MIN(id), MAX(id) FROM tb_voucher_order WHERE voucher_id=9001; SELECT stock FROM tb_seckill_voucher WHERE voucher_id=9001;" \
-            > performance/results/seckill-database-db.txt
+            "SELECT COUNT(*), COUNT(DISTINCT user_id), MIN(id), MAX(id) FROM tb_voucher_order WHERE voucher_id=9001; SELECT stock FROM tb_seckill_voucher WHERE voucher_id=9001; SELECT COUNT(*) FROM (SELECT user_id, voucher_id, COUNT(*) c FROM tb_voucher_order WHERE voucher_id=9001 GROUP BY user_id, voucher_id HAVING c > 1) duplicates;" \
+            > performance/results/seckill-redis-sync-db.txt
+          redis-cli -n 6 GET seckill:stock:9001 > performance/results/seckill-redis-sync-stock.txt
 
       - name: Reset and start Redis MQ optimization
         env:

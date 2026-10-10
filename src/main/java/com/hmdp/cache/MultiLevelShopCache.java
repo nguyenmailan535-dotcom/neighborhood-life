@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.stats.CacheStats;
 import com.hmdp.entity.Shop;
 import com.hmdp.utils.RedisData;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
@@ -110,6 +113,21 @@ public class MultiLevelShopCache {
     public void warm(Long id, Shop shop) {
         writeRedis(id, shop);
         cacheLocally(id, shop);
+    }
+
+    /** Snapshot used by the reproducible cache benchmark. Counters are cumulative per JVM. */
+    public Map<String, Object> localStats() {
+        CacheStats stats = localCache.stats();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("enabled", localEnabled);
+        result.put("estimatedSize", localCache.estimatedSize());
+        result.put("requestCount", stats.requestCount());
+        result.put("hitCount", stats.hitCount());
+        result.put("missCount", stats.missCount());
+        result.put("hitRate", stats.requestCount() == 0 ? null : stats.hitRate());
+        result.put("evictionCount", stats.evictionCount());
+        result.put("loadCount", stats.loadCount());
+        return result;
     }
 
     private Shop retryRedisOnce(Long id, Function<Long, Shop> databaseFallback)

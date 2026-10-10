@@ -38,4 +38,8 @@ nginx-1.18.0/logs/
 performance/results/*.jtl
 performance/results/*.csv
 performance/results/*.html
+performance/results/*.json
+performance/results/*.txt
 tmp/
+__pycache__/
+*.pyc

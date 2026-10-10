@@ -2,10 +2,12 @@
 
 本测试比较同一个 `POST /voucher-order/seckill/9001` 接口的两条实现：
 
-- `SECKILL_MODE=database`：MySQL 同步校验、条件扣库存并写订单（基线）。
+- `SECKILL_MODE=redis-sync`：Redis Lua 原子校验/去重/预扣后，在请求线程同步执行 MySQL 事务（基线）。
 - `SECKILL_MODE=redis-mq`：Redis Lua 原子校验/去重/预扣，RabbitMQ 异步落库（优化）。
 
-两组都保留数据库 `stock > 0` 条件更新与 `(user_id, voucher_id)` 唯一索引。JMeter 从 CSV
+两组共用同一个 `seckill.lua` 完成 Redis 库存校验、一人一单与预扣；异步组额外在 Lua 事务内
+写入 Redis Outbox，基线组则跳过 Outbox 并立即执行 MySQL。两组都保留数据库 `stock > 0`
+条件更新与 `(user_id, voucher_id)` 唯一索引。JMeter 从 CSV
 为每次请求读取不同 token 和 IP，避免“一人一单”与 IP 限流把正常请求误判为压测失败。
 200 个 JMeter 线程各自复用 HTTP Keep-Alive 连接，CSV 凭据仍在每次迭代时全局顺序取下一行，
 避免通过 Docker 端口映射时因反复建立短连接耗尽宿主机临时端口。
@@ -29,13 +31,13 @@ GitHub Actions 对两组统一设置 `RATE_LIMIT_MULTIPLIER=10`，使限流链�
 
 ## 2. 基线组
 
-以 `SECKILL_MODE=database` 启动应用，预热后执行：
+以 `SECKILL_MODE=redis-sync` 启动应用，预热后执行：
 
 ```powershell
 jmeter -n -t performance/jmeter/seckill-voucher-comparison.jmx `
   -Jthreads=200 -Jramp=10 -Jduration=60 -JvoucherId=9001 `
   -Jcredentials=performance/results/seckill-users.csv `
-  -l performance/results/seckill-database-1.jtl
+  -l performance/results/seckill-redis-sync-1.jtl
 ```
 
 ## 3. 优化组
@@ -57,3 +59,6 @@ jmeter -n -t performance/jmeter/seckill-voucher-comparison.jmx `
 
 只有“成功订单数等于库存扣减数、重复订单为 0、库存不为负、队列最终排空”的轮次才能纳入
 简历数据。商铺读取缓存实验不能替代本秒杀测试。
+
+> 旧版 `RESULTS.md` 使用的是“纯 MySQL 同步”基线，不能作为本版 Redis Lua + 同步 MySQL
+> 基线的结果。修改实验口径后必须重新完成至少三轮对照，再更新简历数值。

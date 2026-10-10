@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -22,8 +23,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -63,7 +67,8 @@ class VoucherOrderServiceImplTest {
     void publishesOnlyAfterLuaAtomicallyAcceptsReservation() {
         when(idWorker.nextId("order")).thenReturn(9001L);
         doReturn(0L).when(redisTemplate).execute(
-                any(RedisScript.class), anyList(), anyString(), anyString(), anyString(), anyString());
+                any(RedisScript.class), anyList(), anyString(), anyString(), anyString(), anyString(),
+                anyString());
 
         Result result = service.seckillVoucher(7L);
 
@@ -76,9 +81,12 @@ class VoucherOrderServiceImplTest {
     }
 
     @Test
-    void databaseModeRoutesToSynchronousTransactionalBaseline() {
-        ReflectionTestUtils.setField(service, "seckillMode", "database");
+    void redisSyncModeRunsLuaBeforeSynchronousTransactionalBaseline() {
+        ReflectionTestUtils.setField(service, "seckillMode", "redis-sync");
         when(idWorker.nextId("order")).thenReturn(9002L);
+        doReturn(0L).when(redisTemplate).execute(
+                any(RedisScript.class), anyList(), anyString(), anyString(), anyString(), anyString(),
+                anyString());
         when(synchronousVoucherOrderService.createOrder(9002L, 42L, 7L))
                 .thenReturn(Result.ok(9002L));
 
@@ -86,7 +94,26 @@ class VoucherOrderServiceImplTest {
 
         assertTrue(result.getSuccess());
         assertEquals(9002L, result.getData());
-        verify(synchronousVoucherOrderService).createOrder(9002L, 42L, 7L);
-        verifyNoInteractions(redisTemplate, sender);
+        InOrder order = inOrder(redisTemplate, synchronousVoucherOrderService);
+        order.verify(redisTemplate).execute(
+                any(RedisScript.class), anyList(), anyString(), anyString(), anyString(), anyString(),
+                anyString());
+        order.verify(synchronousVoucherOrderService).createOrder(9002L, 42L, 7L);
+        verifyNoInteractions(sender);
+    }
+
+    @Test
+    void redisSyncModeDoesNotTouchMysqlWhenLuaRejectsTheRequest() {
+        ReflectionTestUtils.setField(service, "seckillMode", "redis-sync");
+        when(idWorker.nextId("order")).thenReturn(9003L);
+        doReturn(1L).when(redisTemplate).execute(
+                any(RedisScript.class), anyList(), anyString(), anyString(), anyString(), anyString(),
+                anyString());
+
+        Result result = service.seckillVoucher(7L);
+
+        assertEquals(false, result.getSuccess());
+        verify(synchronousVoucherOrderService, never()).createOrder(anyLong(), anyLong(), anyLong());
+        verifyNoInteractions(sender);
     }
 }

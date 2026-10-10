@@ -61,8 +61,12 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         Long userId = UserHolder.getUser().getId();
 
         long orderId = redisIdWorker.nextId("order");
-        if ("database".equalsIgnoreCase(seckillMode)) {
-            return synchronousVoucherOrderService.createOrder(orderId, userId, voucherId);
+        boolean synchronous = "redis-sync".equalsIgnoreCase(seckillMode);
+        boolean asynchronous = "redis-mq".equalsIgnoreCase(seckillMode);
+        if (!synchronous && !asynchronous) {
+            throw new IllegalStateException(
+                    "Unsupported app.seckill.mode: " + seckillMode
+                            + "; expected redis-sync or redis-mq");
         }
 
         VoucherOrder voucherOrder = new VoucherOrder();
@@ -77,7 +81,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                 voucherId.toString(),
                 userId.toString(),
                 Long.toString(orderId),
-                message
+                message,
+                asynchronous ? "1" : "0"
         );
         if (r == null) {
             return Result.fail("秒杀服务暂时不可用");
@@ -85,6 +90,11 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         int result = r.intValue();
         if (result != 0) {
             return Result.fail(r == 1 ? "库存不足" : "该用户重复下单");
+        }
+        if (synchronous) {
+            // Benchmark baseline: keep Redis qualification/reservation identical to the
+            // asynchronous path, but perform the MySQL transaction before returning.
+            return synchronousVoucherOrderService.createOrder(orderId, userId, voucherId);
         }
         // Lua has already written the event to the Redis outbox. Publisher confirm removes it;
         // a scheduled retry republishes it after transient RabbitMQ failures.

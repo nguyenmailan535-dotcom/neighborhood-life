@@ -5,6 +5,7 @@ local voucherId = ARGV[1]
 local userId = ARGV[2]
 local orderId = ARGV[3]
 local orderJson = ARGV[4]
+local useOutbox = ARGV[5]
 
 -- 2.数据key
 -- 2.1库存key
@@ -27,7 +28,10 @@ end
 redis.call('incrby',stockKey,-1)
 -- 3.5下单并保存用户
 redis.call('sadd',orderKey,userId)
--- Redis outbox: this write is in the same Lua transaction as stock reservation and deduplication.
--- Publisher confirm removes the entry after RabbitMQ accepts the message.
-redis.call('hset','seckill:pending:orders',orderId,orderJson)
+-- The asynchronous path records an outbox event in the same Lua transaction as the
+-- reservation. The synchronous baseline deliberately skips it because it persists the
+-- order on the request thread and must not be picked up by the MQ retry publisher.
+if(useOutbox == '1') then
+    redis.call('hset','seckill:pending:orders',orderId,orderJson)
+end
 return 0

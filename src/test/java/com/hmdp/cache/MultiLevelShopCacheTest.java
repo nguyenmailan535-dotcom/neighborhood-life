@@ -2,6 +2,7 @@ package com.hmdp.cache;
 
 import cn.hutool.json.JSONUtil;
 import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.hmdp.entity.Shop;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.Map;
 
 import static com.hmdp.utils.RedisConstants.CACHE_SHOP_KEY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -88,5 +90,29 @@ class MultiLevelShopCacheTest {
                 eq(TimeUnit.MINUTES));
         verify(localCache).put(eq(3L), any(ShopCacheValue.class));
         verify(lock).unlock();
+    }
+
+    @Test
+    void reportsMeasuredCaffeineHitRate() {
+        Cache<Long, ShopCacheValue> measuredLocal = Caffeine.newBuilder()
+                .recordStats()
+                .build();
+        MultiLevelShopCache measured = new MultiLevelShopCache(
+                measuredLocal, redisTemplate, redissonClient);
+        ReflectionTestUtils.setField(measured, "localEnabled", true);
+        Shop localShop = new Shop().setId(10L).setName("local shop");
+        Shop redisShop = new Shop().setId(11L).setName("redis shop");
+        measuredLocal.put(10L, ShopCacheValue.present(localShop));
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(CACHE_SHOP_KEY + 11L)).thenReturn(JSONUtil.toJsonStr(redisShop));
+
+        assertEquals(localShop, measured.query(10L, databaseFallback));
+        assertEquals(redisShop, measured.query(11L, databaseFallback));
+        Map<String, Object> stats = measured.localStats();
+
+        assertEquals(2L, stats.get("requestCount"));
+        assertEquals(1L, stats.get("hitCount"));
+        assertEquals(1L, stats.get("missCount"));
+        assertEquals(0.5d, (Double) stats.get("hitRate"), 0.0001d);
     }
 }

@@ -1,0 +1,100 @@
+name: Shop Cache Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: Measured duration per run in seconds
+        required: true
+        default: "180"
+      rounds:
+        description: Number of rounds per mode
+        required: true
+        default: "3"
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "8"
+          cache: maven
+
+      - name: Install benchmark clients
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-tools default-mysql-client
+          curl -fsSLO https://dlcdn.apache.org/jmeter/binaries/apache-jmeter-5.6.3.tgz
+          curl -fsSLO https://downloads.apache.org/jmeter/binaries/apache-jmeter-5.6.3.tgz.sha512
+          echo "$(cut -d' ' -f1 apache-jmeter-5.6.3.tgz.sha512)  apache-jmeter-5.6.3.tgz" | sha512sum -c -
+          tar -xzf apache-jmeter-5.6.3.tgz
+
+      - name: Start infrastructure and prepare 20,000 shops
+        run: |
+          docker compose -f compose.local.yml up -d mysql redis rabbitmq
+          for attempt in $(seq 1 60); do
+            if docker compose -f compose.local.yml exec -T mysql mysqladmin ping -uroot -phmdp_dev --silent; then break; fi
+            sleep 2
+          done
+          docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev hmdp < performance/cache/prepare-hot-shops.sql
+          count=$(docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev \
+            --batch --skip-column-names hmdp -e "SELECT COUNT(*) FROM tb_shop;")
+          test "$count" -ge 20000
+
+      - name: Run Redis and Caffeine comparison
+        env:
+          DURATION: ${{ inputs.duration }}
+          ROUNDS: ${{ inputs.rounds }}
+        run: |
+          mkdir -p performance/results
+          for mode in redis caffeine; do
+            if [ "$mode" = "redis" ]; then local_enabled=false; else local_enabled=true; fi
+            for round in $(seq 1 "$ROUNDS"); do
+              docker compose -f compose.local.yml stop app || true
+              redis-cli -n 6 --scan --pattern 'cache:shop:*' | xargs -r -n 500 redis-cli -n 6 DEL >/dev/null
+              LOCAL_CACHE_ENABLED="$local_enabled" docker compose -f compose.local.yml up -d --build --force-recreate app
+              for attempt in $(seq 1 90); do
+                if curl -fsS http://127.0.0.1:8081/shop/1 >/dev/null; then break; fi
+                sleep 2
+              done
+
+              seq 1 20000 | xargs -P 32 -I{} curl -fsS http://127.0.0.1:8081/shop/{} -o /dev/null
+              ./apache-jmeter-5.6.3/bin/jmeter -n \
+                -t performance/jmeter/shop-cache-comparison.jmx \
+                -Jthreads=200 -Jramp=10 -Jduration=60 -Jseed=20261010 \
+                -l "performance/results/cache-${mode}-${round}-warmup.jtl"
+              curl -fsS http://127.0.0.1:8081/shop/_cache/stats \
+                > "performance/results/cache-${mode}-${round}-before.json"
+
+              ./apache-jmeter-5.6.3/bin/jmeter -n \
+                -t performance/jmeter/shop-cache-comparison.jmx \
+                -Jthreads=200 -Jramp=10 -Jduration="$DURATION" -Jseed=20261010 \
+                -l "performance/results/cache-${mode}-${round}.jtl"
+              curl -fsS http://127.0.0.1:8081/shop/_cache/stats \
+                > "performance/results/cache-${mode}-${round}-after.json"
+              python3 performance/cache/analyze-cache-run.py \
+                "performance/results/cache-${mode}-${round}.jtl" \
+                --before-stats "performance/results/cache-${mode}-${round}-before.json" \
+                --after-stats "performance/results/cache-${mode}-${round}-after.json" \
+                --mode "$mode" \
+                --output "performance/results/cache-${mode}-${round}-result.json"
+            done
+          done
+
+      - name: Upload raw benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shop-cache-benchmark-${{ github.run_id }}
+          path: |
+            performance/results/cache-*.jtl
+            performance/results/cache-*.json
+          retention-days: 14
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose -f compose.local.yml logs --no-color

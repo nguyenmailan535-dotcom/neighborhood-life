@@ -11,16 +11,20 @@
 | Caffeine + Redis + MySQL 多级缓存 | `cache/MultiLevelShopCache`、`LocalCacheConfig` | `MultiLevelShopCacheTest` |
 | 空值、逻辑过期、随机 TTL、Redisson 重建锁 | `MultiLevelShopCache` | 命中、回源、锁释放测试；热点接口 JMeter 对照 |
 | Redis + Lua + AOP 滑动窗口限流 | `ratelimit/*`、`sliding-window-rate-limit.lua` | `SlidingWindowRateLimitAspectTest` 覆盖 API、用户、IP 三维策略 |
-| 可复现秒杀性能数据 | `performance/jmeter/seckill-voucher-comparison.jmx` | `performance/seckill/README.md` 规定口径，`performance/seckill/RESULTS.md` 保留三轮结果与 Actions 证据 |
+| 可复现秒杀性能数据 | `performance/jmeter/seckill-voucher-comparison.jmx` | `performance/seckill/README.md` 规定 Redis Lua + 同步 MySQL 与 Redis Lua + MQ 的新口径；需重新跑三轮 |
+| 热点分布与 Cache Hit Rate | `performance/jmeter/shop-cache-comparison.jmx`、`MultiLevelShopCache.localStats` | `performance/cache/README.md` 规定 70/20/10 分布和采样前后计数差值 |
 
 ## 性能表述状态
 
-既有 `5,990 -> 12,656 QPS、46.0 ms -> 34.3 ms P95` 测量的是热点商铺读取，只能用于多级
-缓存专项说明，不能写成优惠券秒杀性能。秒杀链路已完成三轮有效对照：平均受理 QPS
-`643.63 -> 1,238.20`（`+92.4%`），平均 P95 `757.67 ms -> 325.00 ms`（`-57.1%`）。
+既有 `5,990 -> 12,656 QPS、46.0 ms -> 34.3 ms P95` 来自固定 `/shop/1` 的单 Key 历史实验，
+只能说明收益上界。当前缓存主实验已改为 20,000 条店铺上的 70/20/10 热点分布，并新增正式
+采样窗口 Cache Hit Rate；在新实验完成前，不能把旧数值描述成热点分布结果。
 
-两组均保留相同的一人一单、API/用户/IP 三维限流和数据库唯一索引；性能阶段每个用户仅请求一次，
-避免把预期业务拒绝混入延迟与吞吐统计。唯一实验变量是同步数据库落单或 Redis/MQ 异步落单。
+秒杀基线也已由“纯 MySQL 同步”改为“Redis Lua 原子预扣 + 同步 MySQL”，优化组仍为
+“Redis Lua + RabbitMQ”。旧的 `643.63 -> 1,238.20` QPS 与 `757.67 -> 325.00 ms` P95
+不再匹配当前基线，必须重新完成三轮对照后才能更新简历。
 
-三轮业务、HTTP 与连接错误均为 0，端到端落库完成率 100%，无超卖、重复订单、
-Outbox 遗留、主队列积压与死信；详细证据见 `performance/seckill/RESULTS.md`。
+新口径的两组都保留 Redis Lua、一人一单、API/用户/IP 三维限流和数据库唯一索引；性能阶段每个
+用户仅请求一次，避免把预期业务拒绝混入吞吐统计。Redis 资格预扣后的主要实验变量是同步执行
+MySQL 事务，还是写 Outbox 并投递 RabbitMQ 后异步落库。新三轮结果尚未生成，旧结果只作为
+历史证据保留在 `performance/seckill/RESULTS.md`。
