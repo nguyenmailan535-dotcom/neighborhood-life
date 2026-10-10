@@ -37,9 +37,13 @@ jobs:
         run: |
           docker compose -f compose.local.yml up -d mysql redis rabbitmq
           for attempt in $(seq 1 60); do
-            if docker compose -f compose.local.yml exec -T mysql mysqladmin ping -uroot -phmdp_dev --silent; then break; fi
+            table_count=$(docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev \
+              --batch --skip-column-names hmdp -e \
+              "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='hmdp' AND table_name='tb_shop';" 2>/dev/null || true)
+            if [ "$table_count" = "1" ]; then break; fi
             sleep 2
           done
+          test "$table_count" = "1"
           docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev hmdp < performance/cache/prepare-hot-shops.sql
           count=$(docker compose -f compose.local.yml exec -T mysql mysql -uroot -phmdp_dev \
             --batch --skip-column-names hmdp -e "SELECT COUNT(*) FROM tb_shop;")
