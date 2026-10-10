@@ -79,3 +79,6 @@ python performance/cache/analyze-cache-run.py `
 - 应同时报告 QPS、平均延迟、P95、P99、错误率与 Cache Hit Rate；
 - 不得继续把旧的单 Key `GET /shop/1` 指标描述成热点分布结果；
 - 本实验只验证浏览读链路，不代表优惠券秒杀性能。
+
+2026-10-10 的三轮结果、原始 GitHub Actions 链接及简历可用表述见
+[`RESULTS.md`](RESULTS.md)。

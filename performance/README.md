@@ -4,6 +4,7 @@
 
 - 测试计划：`jmeter/seckill-voucher-comparison.jmx`
 - 数据准备与正确性协议：[`seckill/README.md`](seckill/README.md)
+- 三轮实测结果：[`seckill/RESULTS.md`](seckill/RESULTS.md)
 - 基线：Redis Lua 原子预扣 + 同步 MySQL 事务
 - 优化：Redis Lua 原子预扣 + RabbitMQ 异步落库
 
@@ -32,4 +33,5 @@ jmeter -n -t performance/jmeter/shop-cache-comparison.jmx `
 每种模式至少运行 3 次，同时记录吞吐量、P50/P95/P99、错误率和正式采样窗口内的
 **Cache Hit Rate**。完整协议见 [`cache/README.md`](cache/README.md)。旧的
 [`results/2026-10-02-local.md`](results/2026-10-02-local.md) 是单 Key 历史实验，不能作为新的
-热点分布结果。原始 JTL 默认被 `.gitignore` 排除；结果文档保留参数、机器信息、逐轮统计与口径。
+热点分布结果。新三轮数据见 [`cache/RESULTS.md`](cache/RESULTS.md)。原始 JTL 默认被
+`.gitignore` 排除；结果文档保留参数、机器信息、逐轮统计与口径。

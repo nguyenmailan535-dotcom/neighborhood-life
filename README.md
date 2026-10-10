@@ -62,9 +62,12 @@ MySQL 初始化脚本会创建订单业务唯一索引；已有数据库可单�
 “Redis Lua + RabbitMQ 异步落库”。
 测试为每次请求分配不同的用户 token 和 IP，并在采样结束后核验落库完成率、库存一致性、重复
 订单、Outbox 与 DLQ。完整协议见
-[`performance/seckill/README.md`](performance/seckill/README.md)。旧结果仍使用纯 MySQL 基线，
-修改基线后需要重新完成三轮测试，不能沿用旧提升比例。
+[`performance/seckill/README.md`](performance/seckill/README.md)。新基线三轮实验中，异步链路平均
+QPS 较同步链路提升 59.8%，平均 P95 下降 36.1%；完整数据见
+[`performance/seckill/RESULTS.md`](performance/seckill/RESULTS.md)。
 
 `shop-cache-comparison.jmx` 使用 20,000 条店铺上的 `70% / 20% / 10%` 热点分布，并通过
 `/shop/_cache/stats` 记录正式采样窗口内的 Cache Hit Rate。旧的单 Key 数值只保留为历史上界，
-不能作为热点分布或秒杀链路指标。
+不能作为热点分布或秒杀链路指标。新三轮结果中，多级缓存平均 QPS 提升
+34.2%、平均 P95 下降 23.7%，正式采样窗口 Caffeine 平均命中率为 93.624%；完整数据见
+[`performance/cache/RESULTS.md`](performance/cache/RESULTS.md)。

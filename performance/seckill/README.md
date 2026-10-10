@@ -60,5 +60,5 @@ jmeter -n -t performance/jmeter/seckill-voucher-comparison.jmx `
 只有“成功订单数等于库存扣减数、重复订单为 0、库存不为负、队列最终排空”的轮次才能纳入
 简历数据。商铺读取缓存实验不能替代本秒杀测试。
 
-> 旧版 `RESULTS.md` 使用的是“纯 MySQL 同步”基线，不能作为本版 Redis Lua + 同步 MySQL
-> 基线的结果。修改实验口径后必须重新完成至少三轮对照，再更新简历数值。
+2026-10-10 的新基线三轮结果、原始 GitHub Actions 链接与一致性证据见
+[`RESULTS.md`](RESULTS.md)。
