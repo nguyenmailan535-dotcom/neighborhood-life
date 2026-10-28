@@ -1,7 +1,8 @@
 # 邻里生活｜本地生活服务平台
 
-面向本地生活消费场景的 Spring Boot 服务，覆盖商铺浏览、优惠券秒杀、异步下单、热点缓存和
-分布式限流。本仓库在黑马点评教学项目代码基础上，对高并发与可靠性链路进行了工程化扩展。
+面向本地生活消费场景，构建支持热点商铺缓存、高并发秒杀、异步下单与流量治理的平台。
+本仓库在黑马点评教学项目代码基础上，重点实现并验证多级缓存、分布式限流、Redis Lua
+秒杀资格校验与 RabbitMQ 异步落库链路。
 
 技术栈：Java 8、Spring Boot、MySQL、Redis、Lua、RabbitMQ、Redisson、Caffeine、MyBatis-Plus、JMeter
 
@@ -32,13 +33,11 @@
 
 ## 验证
 
-```powershell
-& 'C:\Program Files\JetBrains\IntelliJ IDEA 2026.2.1\plugins\maven-plugin\lib\maven3\bin\mvn.cmd' test
+```bash
+mvn test
 ```
 
 当前自动化测试覆盖多级缓存命中/回源/锁释放、RabbitMQ 手动 ACK 与异常传播、DLQ 拓扑、三维滑动窗口限流及 Lua 接受后才发送订单消息。
-简历能力点与具体代码、测试之间的对应关系见
-[`docs/RESUME_ALIGNMENT.md`](docs/RESUME_ALIGNMENT.md)。
 
 ## 本地运行
 
@@ -57,13 +56,13 @@ MySQL 初始化脚本会创建订单业务唯一索引；已有数据库可单�
 
 ## 性能与正确性验证
 
-简历主指标使用 `performance/jmeter/seckill-voucher-comparison.jmx` 压测优惠券秒杀接口，支持
+秒杀指标使用 `performance/jmeter/seckill-voucher-comparison.jmx` 压测优惠券秒杀接口，支持
 通过 `SECKILL_MODE=redis-sync/redis-mq` 对比“Redis Lua + 同步 MySQL”与
 “Redis Lua + RabbitMQ 异步落库”。
 测试为每次请求分配不同的用户 token 和 IP，并在采样结束后核验落库完成率、库存一致性、重复
 订单、Outbox 与 DLQ。完整协议见
 [`performance/seckill/README.md`](performance/seckill/README.md)。新基线三轮实验中，异步链路平均
-QPS 较同步链路提升 59.8%，平均 P95 下降 36.1%；完整数据见
+受理 QPS 较同步链路提升 59.8%，平均 P95 下降 36.1%；完整数据见
 [`performance/seckill/RESULTS.md`](performance/seckill/RESULTS.md)。
 
 `shop-cache-comparison.jmx` 使用 20,000 条店铺上的 `70% / 20% / 10%` 热点分布，并通过
@@ -71,3 +70,12 @@ QPS 较同步链路提升 59.8%，平均 P95 下降 36.1%；完整数据见
 不能作为热点分布或秒杀链路指标。新三轮结果中，多级缓存平均 QPS 提升
 34.2%、平均 P95 下降 23.7%，正式采样窗口 Caffeine 平均命中率为 93.624%；完整数据见
 [`performance/cache/RESULTS.md`](performance/cache/RESULTS.md)。
+
+| 场景 | 对照链路 | 优化链路 | QPS | P95 |
+| --- | --- | --- | ---: | ---: |
+| 热点商铺读取 | Redis + MySQL | Caffeine + Redis + MySQL | 5,521 → 7,410 | 56.3 ms → 43.0 ms |
+| 优惠券秒杀 | Redis Lua + 同步 MySQL | Redis Lua + RabbitMQ 异步落库 | 866 → 1,384 | 447 ms → 286 ms |
+
+秒杀采样指标表示接口受理能力；采样结束后继续消费队列并核验最终状态，订单落库完成率为
+100%，且未出现超卖与重复订单。
+
